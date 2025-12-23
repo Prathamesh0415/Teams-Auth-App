@@ -1,6 +1,11 @@
 import crypto, { createHash } from "crypto"
 import redis from "../redis"
 
+interface Session {
+    sessionId: string;
+    [key: string]: string
+}
+
 export function generateRefereshToken(): string{
     return crypto.randomBytes(64).toString("hex")
 }
@@ -56,15 +61,50 @@ export async function deleteAllSessions(userId: string){
 }
 
 export async function getUserSessions(userId: string){
-    const sessionIds = await redis.smembers(`user_session:${userId}`)
-    const sessions = []
+    
+    //Can better this code as the await in the loop leads to long waiting time
+    // const sessionIds = await redis.smembers(`user_session:${userId}`)
+    // const sessions = []
 
-    for(const sid of sessionIds) {
-        const meta = await redis.hgetall(`session:${sid}`)
-        if(Object.keys(meta).length > 0){
-            sessions.push({sessionId: sid, ...meta})
-        }
+    // for(const sid of sessionIds) {
+    //     const meta = await redis.hgetall(`session:${sid}`)
+    //     if(Object.keys(meta).length > 0){
+    //         sessions.push({sessionId: sid, ...meta})
+    //     }
+    // }
+
+    // return sessions
+
+    const sessionIds = await redis.smembers(`user_session:${userId}`)
+    if(sessionIds.length == 0){
+        return []
     }
+
+    //using pipeling
+    const pipeline = redis.pipeline()
+    for(const sid of sessionIds){
+        pipeline.hgetall(`session:${sid}`)
+    }
+
+    //execute all commands in one trip
+    const result = await pipeline.exec()
+
+    if(!result){
+        return []
+    }
+    
+    const sessions: Session[] = []
+
+    sessionIds.forEach((sid, index) => {
+        const [err, sessionData] = result[index]
+
+        if(!err && sessionData && Object.keys(sessionData).length > 0){
+            sessions.push({
+                sessionId: sid,
+                ...sessionData
+            })
+        }
+    })
 
     return sessions
 }
