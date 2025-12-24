@@ -43,6 +43,7 @@ export async function POST(req: NextRequest){
             message: "User registered successfully"
         })
     }catch(error){
+            console.log(error)
             return NextResponse.json({
                 error: "Internal server error at Register"
             }, {status: 500})
