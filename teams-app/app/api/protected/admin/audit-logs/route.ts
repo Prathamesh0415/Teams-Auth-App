@@ -7,9 +7,17 @@ export async function GET(req: NextRequest){
     const deny = requireRole(["ADMIN"])(req)
     if (deny) return deny
     
-    await dbConnect()
+    try {
+        await dbConnect()
 
-    const logs = await AuditLog.find().sort({createdAt: -1}).limit(100)
+        const logs = await AuditLog.find().sort({createdAt: -1}).limit(100)
 
-    return NextResponse.json({logs})
+        return NextResponse.json({logs})
+    } catch (error) {
+        console.error("Error fetching audit logs:", error)
+        return NextResponse.json(
+            { error: "Internal Server Error" }, 
+            { status: 500 }
+        )
+    }
 }

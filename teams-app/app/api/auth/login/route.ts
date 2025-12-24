@@ -9,87 +9,107 @@ import { logAuditEvent } from "@/lib/audit/logger";
 import { rateLimit } from "@/lib/security/rateLimit";
 
 export async function POST(req: NextRequest){
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0] /*|| req.ip*/ || "unknown"
+    try{
+        const ip = req.headers.get("x-forwarded-for")?.split(",")[0] /*|| req.ip*/ || "unknown"
     
-    const { allowed } = await rateLimit({
-        key: `rl:login:ip:${ip}`,
-        limit: 5,
-        windowInSeconds: 300
-    })
+        const { allowed } = await rateLimit({
+            key: `rl:login:ip:${ip}`,
+            limit: 5,
+            windowInSeconds: 300
+        })
 
-    if(!allowed){
-        return NextResponse.json({
-            error: "Too Many Login Attempts. Please try again later"
-        }, {status: 429})
+        if(!allowed){
+            await logAuditEvent({
+                action: "LOGIN_FAILED",
+                metadata: {reason: "rate_limited", ip}
+            })
+
+            return NextResponse.json({
+                error: "Too Many Login Attempts. Please try again later"
+            }, {status: 429})
+        }
+    }catch(error){
+        console.log("Error in rate limiter", error)
     }
+    
+    try{
+        await dbConnect()
+        const { email, password } = await req.json()
 
-    await dbConnect()
-    const { email, password } = await req.json()
+        if(!email || !password){
+            return NextResponse.json(
+                {error: "Invalid credentials"},
+                {status: 400}
+            )
+        }
 
-    if(!email || !password){
-        return NextResponse.json(
-            {error: "Invalid credentials"},
-            {status: 400}
-        )
-    }
+        const user = await User.findOne({email})
+        if(!user){
+            return NextResponse.json(
+                {error: "Invalid credentials"},
+                {status: 401}
+            )
+        }
 
-    const user = await User.findOne({email})
-    if(!user){
-        return NextResponse.json(
-            {error: "Invalid credentials"},
-            {status: 401}
-        )
-    }
+        const isValid = await verifyPassword(password, user.passwordHash)
+        if(!isValid){
+            
+            await logAuditEvent({
+                action: "LOGIN_FAILED",
+                ip: req.headers.get("x-forwarded-for"),
+                userAgent: req.headers.get("user-agent"),
+                metadata: { email },
+            });
 
-    const isValid = await verifyPassword(password, user.passwordHash)
-    if(!isValid){
+            return NextResponse.json(
+                {error: "Invalid credentials"},
+                {status: 401}
+            )
+        }
+        if(!user.emailVerified){
+            return NextResponse.json(
+                {error: "Email not verified"},
+                {status: 403}
+            )
+        }
+
+        const sessionId = crypto.randomUUID()
+        const refereshToken = generateRefereshToken()
+
+        await createSession({
+            userId: user._id.toString(),
+            sessionId,
+            refereshToken,
+            ip: req.headers.get("x-forwared-for") ?? "",
+            userAgent: req.headers.get("user-agent") ?? ""
+        })
+
+        const accessToken = signAccessToken({
+            userId: user._id.toString(),
+            role: user.role,
+            sessionId
+        })
+
+        try{
+            await logAuditEvent({
+                userId: user._id.toString(),
+                action: "LOGIN_SUCCESS",
+                ip: req.headers.get("x-forwarded-for"),
+                userAgent: req.headers.get("user-agent")
+            })
+        }catch(error){
+            console.log("Error while loging in login", error)
+        }
         
-        await logAuditEvent({
-            action: "LOGIN_FAILED",
-            ip: req.headers.get("x-forwarded-for"),
-            userAgent: req.headers.get("user-agent"),
-            metadata: { email },
-        });
 
-        return NextResponse.json(
-            {error: "Invalid credentials"},
-            {status: 401}
-        )
+        return NextResponse.json({
+            accessToken,
+            refereshToken
+        })
+    }catch(error){
+        return NextResponse.json({
+            error: "Internal Server error at login"
+        }, {status: 500})
     }
-    if(!user.emailVerified){
-        return NextResponse.json(
-            {error: "Email not verified"},
-            {status: 403}
-        )
-    }
-
-    const sessionId = crypto.randomUUID()
-    const refereshToken = generateRefereshToken()
-
-    await createSession({
-        userId: user._id.toString(),
-        sessionId,
-        refereshToken,
-        ip: req.headers.get("x-forwared-for") ?? "",
-        userAgent: req.headers.get("user-agent") ?? ""
-    })
-
-    const accessToken = signAccessToken({
-        userId: user._id.toString(),
-        role: user.role,
-        sessionId
-    })
-
-    await logAuditEvent({
-        userId: user._id.toString(),
-        action: "LOGIN_SUCCESS",
-        ip: req.headers.get("x-forwarded-for"),
-        userAgent: req.headers.get("user-agent")
-    })
-
-    return NextResponse.json({
-        accessToken,
-        refereshToken
-    })
 }
 

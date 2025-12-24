@@ -7,69 +7,82 @@ import { logAuditEvent } from "@/lib/audit/logger";
 import { rateLimit } from "@/lib/security/rateLimit";
 
 export async function POST(req: NextRequest){
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0] /*|| req.ip*/ || "unknown"
+    
+    try{    
+        const ip = req.headers.get("x-forwarded-for")?.split(",")[0] /*|| req.ip*/ || "unknown"
         
-    const { allowed } = await rateLimit({
-        key: `rl:refresh:ip:${ip}`,
-        limit: 10,
-         windowInSeconds: 300
-    })
-    
-    if(!allowed){
-        return NextResponse.json({
-            error: "Too Many refresh Attempts. Please try again later"
-        }, {status: 429})
-    }
-    
-    const {userId, role, sessionId, refereshToken} = await req.json()
-
-    if(!userId || !sessionId || !refereshToken){
-        return NextResponse.json(
-            {error: "Invalid request"},
-            {status: 400}
-        )
-    }
-
-    const storedHash = await redis.get(`referesh:${sessionId}`)
-
-    if(!storedHash || storedHash != hashToken(refereshToken)){
-        if(storedHash != hashToken(refereshToken)){
-            await logAuditEvent({
-                userId,
-                action: "TOKEN_REUSE_DETECTED",
-                metadata: { sessionId },
-            });
+        const { allowed } = await rateLimit({
+            key: `rl:refresh:ip:${ip}`,
+            limit: 10,
+            windowInSeconds: 300
+        })
+        
+        if(!allowed){
+            return NextResponse.json({
+                error: "Too Many refresh Attempts. Please try again later"
+            }, {status: 429})
         }
 
-        await deleteAllSessions(userId)
-        return NextResponse.json(
-            {error: "Session compromised, Re-login required"},
-            {status: 401}
-        )
+    }catch(error){
+        console.log("Error in rate limiter")
     }
+    
+    try{
+        const {userId, role, sessionId, refereshToken} = await req.json()
 
-    const newRefereshToken = generateRefereshToken()
+        if(!userId || !sessionId || !refereshToken){
+            return NextResponse.json(
+                {error: "Invalid request"},
+                {status: 400}
+            )
+        }
 
-    await redis.set(`referesh:${sessionId}`,
-        hashToken(newRefereshToken),
-        "KEEPTTL" // DOSENT CAHNDE THE EXPIRY TIME OF THE ORIGINAL TOKEN
-    )
+        const storedHash = await redis.get(`referesh:${sessionId}`)
 
-    const newAccessToken = signAccessToken({
-        userId,
-        role,
-        sessionId
-    })
+        if(!storedHash || storedHash != hashToken(refereshToken)){
+            if(storedHash != hashToken(refereshToken)){
+                await logAuditEvent({
+                    userId,
+                    action: "TOKEN_REUSE_DETECTED",
+                    metadata: { sessionId },
+                });
+            }
 
-    await logAuditEvent({
-        userId,
-        action: "TOKEN_REFRESH",
-    });
+            await deleteAllSessions(userId)
+            return NextResponse.json(
+                {error: "Session compromised, Re-login required"},
+                {status: 401}
+            )
+        }
+
+        const newRefereshToken = generateRefereshToken()
+
+        await redis.set(`referesh:${sessionId}`,
+            hashToken(newRefereshToken),
+            "KEEPTTL" // DOSENT CAHNDE THE EXPIRY TIME OF THE ORIGINAL TOKEN
+        )
+
+        const newAccessToken = signAccessToken({
+            userId,
+            role,
+            sessionId
+        })
+
+        await logAuditEvent({
+            userId,
+            action: "TOKEN_REFRESH",
+        });
 
 
-    return NextResponse.json({
-        accessToken: newAccessToken,
-        refereshToken: newRefereshToken
-    })
+        return NextResponse.json({
+            accessToken: newAccessToken,
+            refereshToken: newRefereshToken
+        })
+    }catch(error){
+        return NextResponse.json({
+            error: "Internal server error"
+        }, {status: 500})
+    }
+    
 
 }
