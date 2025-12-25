@@ -53,6 +53,7 @@ export default function LoginPage() {
       }
 
       // Success: Update context and redirect
+     // console.log(data.accessToken)
       setAccessToken(data.accessToken);
       router.push("/dashboard");
       

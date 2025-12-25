@@ -1,19 +1,51 @@
 "use client"
 
-import { createContext, useContext, ReactNode, useState } from "react"
+import { createContext, useContext, ReactNode, useState, useEffect } from "react"
 
 interface AuthContextType {
-    accessToken: string | null,
-    setAccessToken: (token: string | null) => void
+    accessToken: string | null;
+    setAccessToken: (token: string | null) => void;
+    isLoading: boolean; // Add loading state so you don't redirect while checking auth
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children } : {children: ReactNode}){
     const [accessToken, setAccessToken] = useState<string | null>(null)
+    const [isLoading, setIsLoading] = useState(true) // Start loading by default
+
+    useEffect(() => {
+        // Define the silent refresh logic
+        const refreshAuth = async () => {
+            try {
+                // Call your backend refresh endpoint
+                // The browser automatically attaches the HttpOnly cookie!
+                const res = await fetch("/api/auth/refresh", {
+                    method: "POST", 
+                });
+
+                console.log(res)
+
+                if (res.ok) {
+                    const data = await res.json();
+                    setAccessToken(data.accessToken);
+                } else {
+                    // If refresh fails (token expired/invalid), ensure we are logged out
+                    setAccessToken(null);
+                }
+            } catch (error) {
+                console.error("Silent refresh failed", error);
+                setAccessToken(null);
+            } finally {
+                setIsLoading(false); // Auth check is done
+            }
+        };
+
+        refreshAuth();
+    }, []);
 
     return (
-        <AuthContext.Provider value={{accessToken, setAccessToken}}>
+        <AuthContext.Provider value={{ accessToken, setAccessToken, isLoading }}>
             {children}
         </AuthContext.Provider>
     )
@@ -21,10 +53,8 @@ export function AuthProvider({ children } : {children: ReactNode}){
 
 export function useAuth() {
     const context = useContext(AuthContext)
-
     if(context === undefined){
-        throw new Error("useAuth ,ust be within an AuthProvider")
+        throw new Error("useAuth must be within an AuthProvider")
     }
-
     return context
 }

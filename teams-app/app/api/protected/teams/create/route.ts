@@ -9,7 +9,7 @@ export async function POST(req: NextRequest){
         await dbConnect()
         const { userId } = getAuthContext(req)
         const { name } = await req.json()
-
+        
         const team = await Team.create({
             name,
             ownerId: userId,
@@ -19,11 +19,12 @@ export async function POST(req: NextRequest){
             }]
         })
 
-        await NextResponse.json({
+        return NextResponse.json({
             team
         })
 
     }catch(error){
+        console.log(error)
         return NextResponse.json({
             error:"Internal server error in creating teams" 
         }, {status: 500})

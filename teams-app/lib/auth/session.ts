@@ -1,12 +1,12 @@
-import crypto, { createHash } from "crypto"
-import redis from "../redis"
+import crypto from "crypto"
+import redis from "../redis" // Assuming this is ioredis instance
 
 interface Session {
     sessionId: string;
-    [key: string]: string
+    [key: string]: any; // Changed to 'any' to accommodate numbers/nulls from Redis
 }
 
-export function generateRefereshToken(): string{
+export function generateRefreshToken(): string{
     return crypto.randomBytes(64).toString("hex")
 }
 
@@ -14,26 +14,34 @@ export function hashToken(token: string): string{
     return crypto.createHash("sha256").update(token).digest("hex")
 }
 
+// 1. ADDED 'role' to the interface so it can be saved
 export async function createSession({
     userId,
     sessionId,
-    refereshToken,
+    refreshToken,
     ip,
-    userAgent
+    userAgent,
+    role 
 }: {
     userId: string
     sessionId: string
-    refereshToken: string
+    refreshToken: string
     ip: string
     userAgent: string
+    role: string 
 })  {
-    const tokenHash = hashToken(refereshToken)
+    const tokenHash = hashToken(refreshToken)
 
+    // 2. FIXED TYPO: 'referesh' -> 'refresh' (Standardize this!)
     await redis.set(
-        `referesh:${sessionId}`,
-        tokenHash,
-        "EX",
-        60 * 60 * 24 * 7
+        `refresh:${sessionId}`, 
+        JSON.stringify({ 
+            hash: tokenHash,
+            userId: userId, 
+            role: role 
+        }),
+        "EX", // 3. FIXED SYNTAX: ioredis requires "EX" for expiry
+        60 * 60 * 24 * 7 
     )
 
     await redis.hset(`session:${sessionId}`, {
@@ -43,16 +51,18 @@ export async function createSession({
         createdAt: Date.now().toString()
     })
 
-    await redis.expire( `session:{sessionId}`, 60 * 60 * 24 * 7)
+    // 4. FIXED SYNTAX: Missing '$' in template string
+    await redis.expire(`session:${sessionId}`, 60 * 60 * 24 * 7)
 
+    // 5. FIXED TYPO: Standardized to 'user_sessions' (Plural) everywhere
     await redis.sadd(`user_sessions:${userId}`, sessionId)
 }
 
 export async function deleteSession(sessionId: string, userId: string){
-    
     const pipeline = redis.pipeline()
     
-    pipeline.del(`refresh:${sessionId}`)
+    // Standardized keys
+    pipeline.del(`refresh:${sessionId}`) 
     pipeline.del(`session:${sessionId}`)
     pipeline.srem(`user_sessions:${userId}`, sessionId)
 
@@ -60,44 +70,35 @@ export async function deleteSession(sessionId: string, userId: string){
 }
 
 export async function deleteAllSessions(userId: string){
+    // FIXED TYPO: user_sessions (Plural)
     const sessionIds = await redis.smembers(`user_sessions:${userId}`)
 
+    // Create a pipeline for deletion (Faster than await loop)
+    const pipeline = redis.pipeline(); 
+
     for(const id of sessionIds){
-        await redis.del(`referesh:${id}`)
-        await redis.del(`session:${id}`)
+        pipeline.del(`refresh:${id}`) // Standardized key
+        pipeline.del(`session:${id}`)
     }
     
-    await redis.del(`user_session:${userId}`)
-
+    pipeline.del(`user_sessions:${userId}`) // Delete the set itself
+    
+    await pipeline.exec();
 }
 
 export async function getUserSessions(userId: string){
+    // FIXED TYPO: user_sessions (Plural)
+    const sessionIds = await redis.smembers(`user_sessions:${userId}`)
     
-    //Can better this code as the await in the loop leads to long waiting time
-    // const sessionIds = await redis.smembers(`user_session:${userId}`)
-    // const sessions = []
-
-    // for(const sid of sessionIds) {
-    //     const meta = await redis.hgetall(`session:${sid}`)
-    //     if(Object.keys(meta).length > 0){
-    //         sessions.push({sessionId: sid, ...meta})
-    //     }
-    // }
-
-    // return sessions
-
-    const sessionIds = await redis.smembers(`user_session:${userId}`)
-    if(sessionIds.length == 0){
+    if(sessionIds.length === 0){
         return []
     }
 
-    //using pipeling
     const pipeline = redis.pipeline()
     for(const sid of sessionIds){
         pipeline.hgetall(`session:${sid}`)
     }
 
-    //execute all commands in one trip
     const result = await pipeline.exec()
 
     if(!result){
@@ -107,7 +108,8 @@ export async function getUserSessions(userId: string){
     const sessions: Session[] = []
 
     sessionIds.forEach((sid, index) => {
-        const [err, sessionData] = result[index]
+        // ioredis pipeline returns [error, result]
+        const [err, sessionData] = result[index] as [Error | null, any]; 
 
         if(!err && sessionData && Object.keys(sessionData).length > 0){
             sessions.push({

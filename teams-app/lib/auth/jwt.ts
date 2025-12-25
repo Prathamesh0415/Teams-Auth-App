@@ -1,6 +1,11 @@
-import jwt, { JwtPayload } from "jsonwebtoken"
+import { SignJWT, jwtVerify } from "jose";
 
-const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET
+const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
+
+// jose requires the secret to be a Uint8Array, not a simple string
+const SECRET_KEY = new TextEncoder().encode(ACCESS_TOKEN_SECRET);
+
+//console.log(SECRET_KEY)
 
 export interface AccessTokenPayload {
   userId: string;
@@ -8,31 +13,41 @@ export interface AccessTokenPayload {
   sessionId: string;
 }
 
-export async function signAccessToken(payload: AccessTokenPayload){
-    return jwt.sign(payload, ACCESS_TOKEN_SECRET!, {
-        expiresIn: "15m"
+export async function signAccessToken(payload: AccessTokenPayload) {
+  return await new SignJWT({ 
+      userId: payload.userId, 
+      role: payload.role, 
+      sessionId: payload.sessionId 
     })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("15m")
+    .sign(SECRET_KEY);
 }
 
-export function verifyAccessToken(token: string){
-    const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET!, {
-    algorithms: ["HS256"],
-    }) as JwtPayload;
+export async function verifyAccessToken(token: string) {
+  try {
+    const { payload } = await jwtVerify(token, SECRET_KEY, {
+      algorithms: ["HS256"],
+    });
 
+    // Manual Type Guarding for extra safety
     if (
-        typeof decoded !== "object" ||
-        !decoded.userId ||
-        !decoded.role ||
-        !decoded.sessionId
-        ) {
-            throw new Error("Invalid access token payload");
-        }
+      typeof payload !== "object" ||
+      !payload.userId ||
+      !payload.role ||
+      !payload.sessionId
+    ) {
+      throw new Error("Invalid access token payload");
+    }
 
     return {
-        userId: decoded.userId,
-        role: decoded.role,
-        sessionId: decoded.sessionId,
+      userId: payload.userId as string,
+      role: payload.role as "USER" | "ADMIN",
+      sessionId: payload.sessionId as string,
     };
+  } catch (error) {
+    // Retrowing simplifies handling in middleware
+    throw error;
+  }
 }
-
-

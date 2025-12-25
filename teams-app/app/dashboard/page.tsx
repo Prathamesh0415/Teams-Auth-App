@@ -21,10 +21,10 @@ export default function Dashboard() {
         // 1st arg: URL
         // 2nd arg: Options (empty object if none)
         // 3rd arg: Retry (true)
-        const res = await authFetch("/api/protected/profile", {}, true);
+        //const res = await authFetch("/api/protected/profile", {}, true);
         
-        const data = await res.json();
-        setUser(data.user);
+        //const data = await res.json();
+        //setUser(data.user);
       } catch (error) {
         console.error("Failed to load profile", error);
       } finally {

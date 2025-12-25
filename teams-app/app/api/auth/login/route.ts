@@ -3,7 +3,7 @@ import dbConnect from "@/lib/db";
 import { User } from "@/models/User";
 import { verifyPassword } from "@/lib/auth/password";
 import crypto from "crypto"
-import { createSession, generateRefereshToken } from "@/lib/auth/session";
+import { createSession, generateRefreshToken } from "@/lib/auth/session";
 import { signAccessToken } from "@/lib/auth/jwt";
 import { logAuditEvent } from "@/lib/audit/logger";
 import { rateLimit } from "@/lib/security/rateLimit";
@@ -73,21 +73,35 @@ export async function POST(req: NextRequest){
             )
         }
 
+
         const sessionId = crypto.randomUUID()
-        const refereshToken = generateRefereshToken()
+        const refreshToken = generateRefreshToken()
 
         await createSession({
             userId: user._id.toString(),
             sessionId,
-            refereshToken,
+            refreshToken,
             ip: req.headers.get("x-forwared-for") ?? "",
-            userAgent: req.headers.get("user-agent") ?? ""
+            userAgent: req.headers.get("user-agent") ?? "",
+            role: user.role
         })
 
-        const accessToken = signAccessToken({
+        const accessToken = await signAccessToken({
             userId: user._id.toString(),
             role: user.role,
             sessionId
+        })
+
+        //console.log(accessToken)
+
+        const response =  NextResponse.json({
+            accessToken,
+        })
+
+        response.cookies.set("refreshToken", `${sessionId}:${refreshToken}`, {
+            httpOnly: true,
+            maxAge: 7 * 24 * 60 * 60,
+            path: "/"
         })
 
         try{
@@ -100,12 +114,9 @@ export async function POST(req: NextRequest){
         }catch(error){
             console.log("Error while loging in login", error)
         }
-        
 
-        return NextResponse.json({
-            accessToken,
-            refereshToken
-        })
+        return response
+
     }catch(error){
         return NextResponse.json({
             error: "Internal Server error at login"
