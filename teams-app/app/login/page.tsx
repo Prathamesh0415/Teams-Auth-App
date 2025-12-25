@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { Loader2, AlertCircle } from "lucide-react";
@@ -20,12 +20,18 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function LoginPage() {
-  const { setAccessToken } = useAuth();
+  const { setAccessToken, accessToken } = useAuth();
   const router = useRouter();
 
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && accessToken) {
+      router.replace("/dashboard") // Use replace so they can't 'back' button into login
+    }
+  }, [isLoading, accessToken, router])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
