@@ -7,10 +7,11 @@ import { createSession, generateRefreshToken } from "@/lib/auth/session";
 import { signAccessToken } from "@/lib/auth/jwt";
 import { logAuditEvent } from "@/lib/audit/logger";
 import { rateLimit } from "@/lib/security/rateLimit";
+import { loginSchema } from "@/lib/validators/auth"; // Import Schema
 
 export async function POST(req: NextRequest){
     try{
-        const ip = req.headers.get("x-forwarded-for")?.split(",")[0] /*|| req.ip*/ || "unknown"
+        const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || "unknown"
     
         const { allowed } = await rateLimit({
             key: `rl:login:ip:${ip}`,
@@ -34,14 +35,20 @@ export async function POST(req: NextRequest){
     
     try{
         await dbConnect()
-        const { email, password } = await req.json()
+        const body = await req.json()
 
-        if(!email || !password){
-            return NextResponse.json(
-                {error: "Invalid credentials"},
-                {status: 400}
-            )
+        // 1. Zod Validation
+        const validation = loginSchema.safeParse(body);
+
+        if (!validation.success) {
+            return NextResponse.json({
+                error: "Invalid inputs",
+                details: validation.error.flatten().fieldErrors
+            }, { status: 400 });
         }
+
+        // 2. Use validated data
+        const { email, password } = validation.data;
 
         const user = await User.findOne({email})
         if(!user){
@@ -92,8 +99,6 @@ export async function POST(req: NextRequest){
             sessionId
         })
 
-        //console.log(accessToken)
-
         const response =  NextResponse.json({
             accessToken,
         })
@@ -123,4 +128,3 @@ export async function POST(req: NextRequest){
         }, {status: 500})
     }
 }
-

@@ -19,48 +19,57 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-export default function LoginPage() {
-  const { setAccessToken, accessToken } = useAuth();
-  const router = useRouter();
+// NEW IMPORTS
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { loginSchema, LoginInput } from "@/lib/validators/auth";
 
-  const [formData, setFormData] = useState({ email: "", password: "" });
+export default function LoginPage() {
+  const { setAccessToken, accessToken } = useAuth(); // Keeping your original context structure
+  const router = useRouter();
+  
+  // We keep your manual loading/error states since you wanted minimal changes elsewhere
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // 1. Initialize React Hook Form
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting: isFormSubmitting }, // We can use RHF's submitting state too
+  } = useForm<LoginInput>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
+
   useEffect(() => {
     if (!isLoading && accessToken) {
-      router.replace("/dashboard") // Use replace so they can't 'back' button into login
+      router.replace("/dashboard");
     }
-  }, [isLoading, accessToken, router])
+  }, [isLoading, accessToken, router]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-    // Clear error when user starts typing again
-    if (error) setError(null);
-  };
-
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
+  // 2. Updated Login Function (receives data from RHF)
+  async function handleLogin(data: LoginInput) {
     setIsLoading(true);
     setError(null);
 
     try {
-      // We use standard fetch here to handle 401s manually (without auto-redirect)
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(data), // Use data from RHF directly
       });
 
-      const data = await res.json();
+      const responseData = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Login failed");
+        throw new Error(responseData.error || "Login failed");
       }
 
-      // Success: Update context and redirect
-     // console.log(data.accessToken)
-      setAccessToken(data.accessToken);
+      setAccessToken(responseData.accessToken);
       router.push("/dashboard");
       
     } catch (err: any) {
@@ -81,9 +90,10 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         
-        <form onSubmit={handleLogin}>
+        {/* 3. Wrap handleLogin in handleSubmit */}
+        <form onSubmit={handleSubmit(handleLogin)}>
           <CardContent className="space-y-4">
-            {/* Error Alert */}
+            
             {error && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -95,13 +105,17 @@ export default function LoginPage() {
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
-                name="email"
                 type="email"
                 placeholder="name@example.com"
-                value={formData.email}
-                onChange={handleChange}
-                required
+                // 4. Register input with Zod
+                {...register("email")}
+                // 5. Add visual error state
+                className={errors.email ? "border-red-500 focus-visible:ring-red-500" : ""}
               />
+              {/* 6. Display Zod error message */}
+              {errors.email && (
+                <p className="text-sm text-red-500 font-medium">{errors.email.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -116,18 +130,20 @@ export default function LoginPage() {
               </div>
               <Input
                 id="password"
-                name="password"
                 type="password"
-                value={formData.password}
-                onChange={handleChange}
-                required
+                {...register("password")}
+                className={errors.password ? "border-red-500 focus-visible:ring-red-500" : ""}
               />
+              {errors.password && (
+                <p className="text-sm text-red-500 font-medium">{errors.password.message}</p>
+              )}
             </div>
           </CardContent>
 
           <CardFooter>
-            <Button className="w-full" type="submit" disabled={isLoading}>
-              {isLoading ? (
+            {/* Disable if either our manual loading state OR RHF submitting state is true */}
+            <Button className="w-full" type="submit" disabled={isLoading || isFormSubmitting}>
+              {isLoading || isFormSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Signing In...
