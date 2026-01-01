@@ -17,11 +17,11 @@ const UserSchema = new Schema(
       required: true,
     },
 
-    role: {
-      type: String,
-      enum: ["USER", "ADMIN"],
-      default: "USER",
-    },
+    // role: {
+    //   type: String,
+    //   enum: ["USER", "ADMIN"],
+    //   default: "USER",
+    // },
 
     emailVerified: {
       type: Boolean,
@@ -34,12 +34,12 @@ const UserSchema = new Schema(
     passwordResetToken: String,
     passwordResetExpires: Date,
 
-    teams: [
-      {
-        type: Types.ObjectId,
-        ref: "Team",
-      },
-    ],
+    // teams: [
+    //   {
+    //     type: Types.ObjectId,
+    //     ref: "Team",
+    //   },
+    // ],
   },
   { timestamps: true }
 );
