@@ -1,4 +1,6 @@
 // app/(app)/layout.tsx
+"use client"
+
 import React from "react";
 import { 
   Search, 
@@ -23,12 +25,36 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/8bit/dropdown-menu";
+import Link from "next/link";
+import { useFetch } from "@/hooks/useFetch";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
 
 export default function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+    const fetchWithAuth = useFetch()
+    const { setAccessToken } = useAuth()
+    const router = useRouter()
+    const handleLogout = async () => {
+    try {
+      // 1. Call Backend to clear httpOnly cookies (refresh token)
+      // We use fetchWithAuth to ensure the request is authenticated if needed
+      await fetchWithAuth("/api/protected/auth/logout", {
+        method: "POST",
+      });
+    } catch (error) {
+      console.error("Logout request failed, forcing client logout", error);
+    } finally {
+      // 2. Clear Client State (Always run this, even if API fails)
+      setAccessToken(null);
+      
+      // 3. Redirect to Home
+      router.push("/");
+    }
+  };
   return (
     <div className="flex min-h-screen bg-background font-mono">
       
@@ -56,9 +82,21 @@ export default function AppLayout({
 
           {/* User Actions */}
           <div className="flex items-center gap-4 ml-auto">
+            <Link href="summarize">
             <Button size="sm" className="hidden sm:flex gap-2 border-2 border-black bg-green-600 hover:bg-green-700 text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
               <Plus size={16} /> <span className="hidden lg:inline">New Summary</span>
             </Button>
+            </Link>
+
+            <Button 
+        variant="ghost" 
+        onClick={handleLogout}
+        className="w-40 justify-start gap-3 mt-2 text-red-600 hover:bg-red-50 hover:text-red-700 hover:underline"
+      >
+        <LogOut size={18} />
+        Log Out
+      </Button>
+    
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

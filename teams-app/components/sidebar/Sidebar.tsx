@@ -1,5 +1,4 @@
 import React from "react";
-import Link from "next/link";
 import {
   LayoutDashboard,
   FileText,
@@ -26,11 +25,13 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/8bit/sheet";
+import Link from "next/link";
 
 // 1. The Menu Items (Reused in Mobile & Desktop)
 export function SidebarNav() {
   return (
     <nav className="grid gap-2 p-4">
+      <Link href="/dashboard">
       <Button 
         variant="default" 
         className="w-full justify-start gap-3 border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
@@ -38,27 +39,32 @@ export function SidebarNav() {
         <LayoutDashboard size={18} />
         Dashboard
       </Button>
+      </Link>
+      <Link href="/my-summaries">
       <Button 
-        variant="ghost" 
-        className="w-full justify-start gap-3 hover:bg-muted/50 hover:underline"
+        variant="default" 
+        className="w-full justify-start gap-3 border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
       >
-        <FileText size={18} />
+        <LayoutDashboard size={18} />
         My Summaries
       </Button>
+      </Link>
+      <Link href="/summarize">
       <Button 
-        variant="ghost" 
-        className="w-full justify-start gap-3 hover:bg-muted/50 hover:underline"
+        variant="default" 
+        className="w-full justify-start gap-3 border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
       >
-        <CreditCard size={18} />
-        Billing
+        <LayoutDashboard size={18} />
+        Summarize
       </Button>
-      <Button 
+      </Link> 
+      {/* <Button 
         variant="ghost" 
         className="w-full justify-start gap-3 hover:bg-muted/50 hover:underline"
       >
         <Settings size={18} />
         Settings
-      </Button>
+      </Button> */}
     </nav>
   );
 }

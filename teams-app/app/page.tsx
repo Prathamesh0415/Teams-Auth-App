@@ -92,12 +92,14 @@ export default function SummarizerLandingPage() {
           </div>
 
           {/* Auth Buttons (Desktop) */}
+          
           <div className="hidden md:flex items-center gap-4">
-            <Button variant="ghost" className="hover:bg-muted">Login</Button>
-            <Button className="border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all active:translate-x-[4px] active:translate-y-[4px]">
+            <Link href="/login"><Button variant="ghost" className="hover:bg-muted">Login</Button></Link>
+            <Link href="/register"><Button className="border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all active:translate-x-[4px] active:translate-y-[4px]">
               Register
-            </Button>
+            </Button></Link>
           </div>
+          
 
           {/* Mobile Menu */}
           <Sheet>
