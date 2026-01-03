@@ -4,9 +4,10 @@ import redis from "@/lib/redis";
 import * as cheerio from "cheerio";
 import { hashToken } from "@/lib/auth/session";
 import { rateLimit } from "@/lib/security/rateLimit";
-import dbConnect from "@/lib/db"; // Import your DB connection
-import Summary from "@/models/Summary";       // Import your Mongoose Model
+import dbConnect from "@/lib/db"; 
+import Summary from "@/models/Summary"; 
 import { getAuthContext } from "@/lib/auth/context";
+import { User } from "@/models/User";
 
 // Initialize OpenAI
 const openai = new OpenAI({
@@ -27,18 +28,37 @@ async function fetchWithRetry(fn: () => Promise<string>, retries = 3, delay = 10
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
-    const {  url } = body || {}; // Extract userId for DB saving
-    const { userId } = getAuthContext(req)
+    const { url } = body || {}; 
+    const { userId } = getAuthContext(req);
+
+    await dbConnect(); // Ensure DB connection early
+    const user = await User.findOne({_id: userId});
+
+    if(!user){
+      return NextResponse.json({error: "Bad request"}, {status: 400})
+    }
+
+    // 1. CREDIT CHECK: Block if user has 0 or less credits
+    if(user.credits <= 0){
+      return NextResponse.json({
+        error: "Insufficient credits. Please upgrade your plan."
+      }, { status: 403 })
+    }
 
     if (!url) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
     
-    // Ensure we have a User ID if we want to save to their history
-    // (You can remove this check if guest usage is allowed without DB saving)
     if (!userId) {
        return NextResponse.json({ error: "User ID is required" }, { status: 400 });
     }
+
+    // --- HELPER: Atomic Credit Deduction ---
+    const deductCredit = async (uid: string) => {
+      // $inc is atomic: prevents race conditions if user spams clicks
+      await User.findByIdAndUpdate(uid, { $inc: { credits: -1 } });
+      console.log(`💰 Credit deducted for User ${uid}`);
+    };
 
     // ============================================================
     // STEP 1: RATE LIMITER
@@ -63,27 +83,25 @@ export async function POST(req: NextRequest) {
     // STEP 2: CACHE & DB CHECK (The Split Strategy)
     // ============================================================
     
-    // Identify Content Type
     const isYoutube = url.includes("youtube.com") || url.includes("youtu.be");
     let videoId = null;
 
     if (isYoutube) {
-      // Extract ID for potential extra checks
       const match = url.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/);
       videoId = match ? match[1] : null;
     }
 
     // --- BRANCH A: YOUTUBE (Check MongoDB ONLY) ---
     if (isYoutube) {
-      await dbConnect();
-      // Check if ANY record exists with this URL (Global Cache)
       const existingSummary = await Summary.findOne({ url: url });
 
       if (existingSummary) {
         console.log("Creating new history entry from existing DB record (Youtube)...");
         
-        // 1. Create a fresh entry for THIS user in their history
-        //    (So it appears in their dashboard as "Just Viewed")
+        // 💰 PAYMENT: Deduct for Cache Hit
+        await deductCredit(userId);
+        
+        // Create a fresh entry for THIS user in their history
         await Summary.create({
           userId,
           url,
@@ -93,13 +111,11 @@ export async function POST(req: NextRequest) {
           videoDuration: existingSummary.videoDuration
         });
 
-        // 2. Return the existing data immediately
         return NextResponse.json({
           summary: existingSummary.summary,
-          source: "mongodb", // Explicitly telling frontend source
+          source: "mongodb", 
         });
       }
-      // If NOT found: Proceed to generate. DO NOT check Redis.
     } 
     
     // --- BRANCH B: WEBSITE (Check Redis ONLY) ---
@@ -111,16 +127,14 @@ export async function POST(req: NextRequest) {
       if (cachedSummary) {
         console.log("Hit Redis Cache for Website");
         
-        // Return immediately (We do NOT save to MongoDB history on cache hit 
-        // per your instructions "if it hits the cache then give the... summary")
-        // However, usually you'd want to save this hit to the user's DB history too.
-        // I will save it to DB to maintain consistency with the dashboard requirement.
+        // 💰 PAYMENT: Deduct for Cache Hit
+        await deductCredit(userId);
         
         await dbConnect();
         await Summary.create({
             userId,
             url,
-            title: "Web Article (Cached)", // You might want to cache title in Redis too to fix this
+            title: "Web Article (Cached)",
             summary: cachedSummary,
             type: "website"
         });
@@ -130,14 +144,13 @@ export async function POST(req: NextRequest) {
           source: "cache",
         });
       }
-      // If NOT found: Proceed to generate.
     }
 
     // ============================================================
     // STEP 3: FETCH CONTENT (Scraping)
     // ============================================================
     let content = "";
-    let pageTitle = "New Summary"; // Default title if scraping fails to get one
+    let pageTitle = "New Summary"; 
 
     try {
       content = await fetchWithRetry(async () => {
@@ -157,7 +170,7 @@ export async function POST(req: NextRequest) {
           const data = await transcriptRes.json();
 
           if (Array.isArray(data) && data.length > 0 && data[0].text) {
-             pageTitle = data[0].title || "YouTube Video"; // Try to get title from API if available
+             pageTitle = data[0].title || "YouTube Video"; 
              return data[0].text;
           } else {
              throw new Error("No transcript found");
@@ -169,7 +182,6 @@ export async function POST(req: NextRequest) {
           const html = await res.text();
           const $ = cheerio.load(html);
           
-          // Try to grab the title
           const extractedTitle = $("title").text().trim();
           if (extractedTitle) pageTitle = extractedTitle;
 
@@ -205,6 +217,10 @@ export async function POST(req: NextRequest) {
       stream: true,
     });
 
+    // 💰 PAYMENT: Deduct for Fresh Generation
+    // We deduct here to ensure the user is charged as soon as OpenAI starts working
+    await deductCredit(userId);
+
     const encoder = new TextEncoder();
     let fullGeneratedSummary = "";
 
@@ -224,23 +240,19 @@ export async function POST(req: NextRequest) {
             await dbConnect();
 
             // 1. ALWAYS Save to MongoDB (Both YT and Web)
-            // This is the "permanent" record
             await Summary.create({
               userId,
               url,
               title: pageTitle,
               summary: fullGeneratedSummary,
               type: isYoutube ? "video" : "website",
-              // For now we don't have exact length, but you could add it if scraping API provides it
             });
             console.log("✅ Saved summary to MongoDB");
 
             // 2. CONDITIONALLY Save to Redis
             if (isYoutube) {
-               // User Requirement: "dont cache this" (for YT)
                console.log("🚫 Skipping Redis cache for YouTube video");
             } else {
-               // User Requirement: "store for 5 mins" (for Website)
                const urlHash = hashToken(url);
                const cachedKey = `summary:${urlHash}`;
                await redis.set(cachedKey, fullGeneratedSummary, "EX", 300); // 300s = 5 mins

@@ -4,6 +4,8 @@ import redis from "@/lib/redis";
 import { signAccessToken } from "@/lib/auth/jwt";
 import { logAuditEvent } from "@/lib/audit/logger";
 import { rateLimit } from "@/lib/security/rateLimit";
+import { User } from "@/models/User";
+import dbConnect from "@/lib/db";
 
 export async function POST(req: NextRequest){
     try {    
@@ -57,7 +59,11 @@ export async function POST(req: NextRequest){
 
         // Parse the JSON data we stored during login
         const sessionData = JSON.parse(rawData); 
-        const { hash: storedHash, userId, role } = sessionData;
+        const { hash: storedHash, userId} = sessionData;
+
+        await dbConnect()
+
+        const user = await User.findOne({_id: userId})
 
         // 5. Verify Token Hash
         const incomingHash = hashToken(refreshToken);
@@ -82,7 +88,7 @@ export async function POST(req: NextRequest){
         const newRefreshToken = await generateRefreshToken();
         const newAccessToken = await signAccessToken({ // await is needed for jose
             userId,
-            role,
+            //role,
             sessionId
         });
 
@@ -93,7 +99,7 @@ export async function POST(req: NextRequest){
             JSON.stringify({ 
                 hash: hashToken(newRefreshToken), 
                 userId, 
-                role 
+                //role 
             }),
             "KEEPTTL"
         );
@@ -103,7 +109,13 @@ export async function POST(req: NextRequest){
 
         // 9. Prepare Response with NEW Cookie
         const response = NextResponse.json({ 
-            accessToken: newAccessToken 
+            accessToken: newAccessToken,
+            user:{
+                userId: userId,
+                email: user.email,
+                credits: user.credits,
+                planName: user.planName
+            }
             // Note: We DO NOT send refreshToken in body anymore
         });
 

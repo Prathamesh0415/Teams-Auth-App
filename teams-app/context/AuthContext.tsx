@@ -2,8 +2,18 @@
 
 import { createContext, useContext, ReactNode, useState, useEffect } from "react"
 
+interface User {
+    _id: string;
+    email: string;
+    username: string;
+    credits: number;
+    planName: string
+    // add other fields you need like 'avatarUrl', 'role', etc.
+}
+
 interface AuthContextType {
     accessToken: string | null;
+    user: User | null;
     setAccessToken: (token: string | null) => void;
     isLoading: boolean; // Add loading state so you don't redirect while checking auth
 }
@@ -13,6 +23,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children } : {children: ReactNode}){
     const [accessToken, setAccessToken] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState(true) // Start loading by default
+    const [user, setUser] = useState<User | null>(null)
 
     useEffect(() => {
         // Define the silent refresh logic
@@ -29,13 +40,16 @@ export function AuthProvider({ children } : {children: ReactNode}){
                 if (res.ok) {
                     const data = await res.json();
                     setAccessToken(data.accessToken);
+                    setUser(data.user)
                 } else {
                     // If refresh fails (token expired/invalid), ensure we are logged out
                     setAccessToken(null);
+                    setUser(null)
                 }
             } catch (error) {
                 console.error("Silent refresh failed", error);
                 setAccessToken(null);
+                setUser(null)
             } finally {
                 setIsLoading(false); // Auth check is done
             }
@@ -45,7 +59,7 @@ export function AuthProvider({ children } : {children: ReactNode}){
     }, []);
 
     return (
-        <AuthContext.Provider value={{ accessToken, setAccessToken, isLoading }}>
+        <AuthContext.Provider value={{ accessToken, user, setAccessToken, isLoading }}>
             {children}
         </AuthContext.Provider>
     )

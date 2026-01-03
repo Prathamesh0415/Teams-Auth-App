@@ -30,6 +30,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/8bit/sheet";
 import Link from "next/link";
+import { useAuth } from "@/context/AuthContext"; // <--- 1. Import Auth Context
 
 // 1. The Menu Items (Updated to handle collapse state)
 export function SidebarNav({ isCollapsed }: { isCollapsed?: boolean }) {
@@ -64,33 +65,52 @@ export function SidebarNav({ isCollapsed }: { isCollapsed?: boolean }) {
   );
 }
 
-// 2. The Usage Card (Hidden when collapsed)
+// 2. The Usage Card (Updated with Dynamic Data)
 export function SidebarUsage({ isCollapsed }: { isCollapsed?: boolean }) {
-  if (isCollapsed) return null; // Hide completely if collapsed
+  const { user, isLoading } = useAuth();
+
+  if (isCollapsed) return null; 
+  if (isLoading || !user) return null; 
 
   return (
     <div className="p-4 border-t-4 border-muted bg-background mt-auto">
-      <Card className="border-2 border-black shadow-none bg-muted/30">
-        <CardHeader className="p-4 pb-2">
-          <CardTitle className="text-sm">Free Plan</CardTitle>
-          <CardDescription className="text-xs">7/10 Summaries used</CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 pt-2">
-          <Progress value={70} className="h-3 border-2 border-black" />
-          <Button size="sm" variant="outline" className="w-full mt-4 text-xs h-8 border-black">
-            Upgrade Pro
+      <Card className="border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-yellow-50/50">
+        <CardContent className="p-4 flex flex-col items-center text-center space-y-3">
+          
+          {/* Plan Badge */}
+          <div className="bg-black text-white text-[10px] px-3 py-1 font-bold uppercase tracking-widest">
+            {user.planName} Plan
+          </div>
+
+          {/* Big Credit Count */}
+          <div className="py-2">
+             <div className="text-5xl font-black text-black tracking-tighter">
+                {user.credits}
+             </div>
+             <p className="text-xs font-bold text-muted-foreground uppercase mt-1">
+                Credits Remaining
+             </p>
+          </div>
+          
+          {/* Action Button */}
+          <Button 
+            size="sm" 
+            className="w-full h-9 border-2 border-black bg-white hover:bg-green-100 text-black font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"
+          >
+            Get More Credits
           </Button>
+
         </CardContent>
       </Card>
     </div>
   );
 }
 
-// 3. Desktop Sidebar Component (Updated with Toggle Logic)
+// 3. Desktop Sidebar Component
 interface DesktopSidebarProps {
   className?: string;
-  isCollapsed: boolean;       // <--- New Prop
-  toggleSidebar: () => void;  // <--- New Prop
+  isCollapsed: boolean;      
+  toggleSidebar: () => void; 
 }
 
 export function DesktopSidebar({ className, isCollapsed, toggleSidebar }: DesktopSidebarProps) {
@@ -121,7 +141,7 @@ export function DesktopSidebar({ className, isCollapsed, toggleSidebar }: Deskto
         )}
       </div>
       
-      {/* If collapsed, show the expand button at the top of the scroll area or header */}
+      {/* If collapsed, show the expand button at the top */}
       {isCollapsed && (
          <div className="flex justify-center py-2 border-b-2 border-muted">
             <Button variant="ghost" size="icon" onClick={toggleSidebar} className="h-8 w-8">
@@ -139,7 +159,7 @@ export function DesktopSidebar({ className, isCollapsed, toggleSidebar }: Deskto
   );
 }
 
-// 4. Mobile Sidebar (Unchanged logic, just keeping prop consistency)
+// 4. Mobile Sidebar
 export function MobileSidebar() {
   return (
     <Sheet>
